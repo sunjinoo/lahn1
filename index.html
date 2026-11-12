@@ -96,6 +96,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 #wheel{height:200px;width:110px;overflow-y:auto;scroll-snap-type:y mandatory;padding:80px 0;text-align:center;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 35%,#000 65%,transparent);mask-image:linear-gradient(transparent,#000 35%,#000 65%,transparent)}
 #wheel::-webkit-scrollbar{display:none}#wheel div{height:40px;line-height:40px;font-size:22px;scroll-snap-align:center;color:var(--mute)}#wheel div.sel{color:var(--text);font-weight:700}
 .slb{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+
+.row .th{width:46px;height:46px;border-radius:9px;flex:none;background:rgba(var(--w),.09) center/cover no-repeat;display:grid;place-items:center;font-size:18px;color:var(--mute)}
+.av[data-cv],.av[data-cvk]{background-position:center;background-repeat:no-repeat}
 </style>
 </head>
 <body>
@@ -152,8 +155,8 @@ const txt = (d) => {
   const e = d[0], lab = e === 0 ? 'windows-1256' : e === 3 ? 'utf-8' : e === 1 ? 'utf-16le' : 'utf-16be';
   return new TextDecoder(lab).decode(d.subarray(1)).replace(/\0[\s\S]*$/, '').trim();
 };
-async function readTags(k) {
-  if (tagCache.has(k)) return tagCache.get(k);
+async function readTags(k, noCache) {
+  if (tagCache.has(k)) { const c0 = tagCache.get(k); if (!noCache || c0.cover) return c0; }
   const f = files.get(k), r = { title: '', artist: '', album: '', cover: null };
   try {
     if (/\.mp3$/i.test(f.name)) {
@@ -185,7 +188,7 @@ async function readTags(k) {
       }
     }
   } catch (_) {}
-  if (!window.__scan) tagCache.set(k, r); return r;
+  if (!window.__scan && !noCache) tagCache.set(k, r); return r;
 }
 const dur = (url) => new Promise((res) => {
   const a = new Audio(); a.preload = 'metadata';
@@ -853,7 +856,7 @@ function tops() {
   HIST.filter((x) => x.t > lim).forEach((x) => { s.set(x.k, (s.get(x.k) || 0) + 1); const m = DB.lib[x.k]; if (!m) return; artistsOf(m).forEach((n) => a.set(n, (a.get(n) || 0) + 1)); if (m.album) b.set(m.album, (b.get(m.album) || 0) + 1); });
   const top = (mp, n) => [...mp.entries()].sort((x, y) => y[1] - x[1]).slice(0, n); return [top(a, 10), top(s, 5), top(b, 10)];
 }
-const gcard = (pre, n, sub) => `<button class="card" data-g="${pre}${esc(n)}"><div class="av${pre === 'ar:' ? ' rd' : ''}" style="background:${hue(n)}">${esc([...n][0].toUpperCase())}</div><b dir="auto">${esc(n)}</b><span>${sub}</span></button>`;
+const gcard = (pre, n, sub) => `<button class="card" data-g="${pre}${esc(n)}"><div class="av${pre === 'ar:' ? ' rd' : ''}" data-cv="${pre}${esc(n)}" style="background:${hue(n)}">${esc([...n][0].toUpperCase())}</div><b dir="auto">${esc(n)}</b><span>${sub}</span></button>`;
 function customView() {
   if (lastView !== view) { SEL.clear(); lastView = view; }
   const L = $('#list'), v = view;
@@ -861,6 +864,7 @@ function customView() {
     const g = groups(v === 'artists' ? 'artist' : 'album'), ns = [...g.keys()].sort((a, b) => a.localeCompare(b));
     $('#vt').textContent = v === 'artists' ? 'الفنانون' : 'الألبومات'; $('#count').textContent = ns.length;
     L.innerHTML = ns.length ? `<div class="grid">${ns.map((n) => gcard(v === 'artists' ? 'ar:' : 'al:', n, g.get(n).length)).join('')}</div>` : `<div class="empty">${EMPTY[3]}</div>`;
+    if (v === 'albums') { const sg = Object.keys(DB.lib).filter((k) => !DB.lib[k].album); if (sg.length) L.insertAdjacentHTML('beforeend', '<h3>فردي</h3><div class="grid">' + sg.map((k) => `<button class="card" data-play="${esc(k)}"><div class="av" data-cvk="${esc(k)}" style="background:${hue(DB.lib[k].title || k)}">♪</div><b dir="auto">${esc(DB.lib[k].title)}</b><span dir="auto">${esc(DB.lib[k].artist || '')}</span></button>`).join('') + '</div>'); }
   } else if (v === 'home') {
     $('#vt').textContent = 'الرئيسية'; $('#count').textContent = Object.keys(DB.lib).length;
     const [ta, ts, tb] = tops();
@@ -873,13 +877,14 @@ function customView() {
     if (v.startsWith('ar:') || v.startsWith('al:')) L.insertAdjacentHTML('afterbegin', '<div class="acts"><button class="chip pri" data-act="playall">▶ <span>تشغيل الكل</span></button><button class="chip" data-act="shuf">🔀 <span>عشوائي</span></button></div>');
     L.querySelectorAll('.row[data-k] .t span').forEach((sp) => { const k = sp.closest('.row').dataset.k, m = DB.lib[k]; if (m && m.artist && files.has(k)) sp.innerHTML = artistsOf(m).map((a) => `<a data-g="ar:${esc(a)}">${esc(a)}</a>`).join(', '); });
   }
-  paintSel();
+  decorate(); paintSel();
 }
 const visKeys = () => [...document.querySelectorAll('#list .row[data-k]')].filter((r) => !r.hidden).map((r) => r.dataset.k);
 function paintSel() { document.querySelectorAll('#list .row').forEach((r) => r.classList.toggle('sel', SEL.has(r.dataset.k))); $('#selbar').hidden = !SEL.size; $('#selc').textContent = SEL.size; }
 document.querySelector('.hero').insertAdjacentHTML('afterend', '<div id="selbar" hidden><span><b id="selc"></b> <span>محدد</span></span><button class="chip" id="selm">⋯</button><button class="chip" id="selx" aria-label="إغلاق">✕</button></div>');
 $('#list').addEventListener('click', (e) => {
   const g = e.target.closest('[data-g]'); if (g) { e.stopImmediatePropagation(); view = g.dataset.g; render(); return; }
+  const pl1 = e.target.closest('[data-play]'); if (pl1) { e.stopImmediatePropagation(); startQueue([pl1.dataset.play], pl1.dataset.play); return; }
   const a = e.target.closest('[data-act]');
   if (a && !a.closest('.row')) {
     e.stopImmediatePropagation(); const ks = keysOfView();
@@ -960,6 +965,80 @@ addEventListener('keydown', (e) => {
   else if (c === 'ArrowUp' || c === 'ArrowDown') { e.preventDefault(); $('#vol').value = Math.max(0, Math.min(100, audio.volume * 100 + (c === 'ArrowUp' ? 5 : -5))); $('#vol').dispatchEvent(new Event('input')); }
   else if (c === 'Slash') { e.preventDefault(); $('#q').focus(); } else if (c === 'Escape') { SEL.clear(); paintSel(); }
 });
+
+/* ---- v9: cover art everywhere + right-click on everything ---- */
+addRows(['فردي|Singles', 'فتح|Open', 'من الأول|Restart', 'رجوع 15 ث|Back 15 s', 'تقدم 15 ث|Forward 15 s', 'كتم / إلغاء الكتم|Mute / Unmute', 'إيقاف تام|Stop', 'إيقاف مؤقت|Pause', 'عشوائي (تشغيل/إيقاف)|Shuffle on/off', 'إضافة ملفات|Add files', 'إضافة مجلد|Add folder', 'المزيد…|More…', 'تحديد الكل|Select all']);
+const thdb = new Promise((res, rej) => { const r = indexedDB.open('lahn-th', 1); r.onupgradeneeded = () => r.result.createObjectStore('t'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const thGet = (k) => thdb.then((db) => new Promise((res) => { const q = db.transaction('t').objectStore('t').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); })).catch(() => undefined);
+const thPut = (k, v) => thdb.then((db) => db.transaction('t', 'readwrite').objectStore('t').put(v, k)).catch(() => {});
+const shrink = (src) => new Promise((res) => { const im = new Image(); im.onload = () => { const c = document.createElement('canvas'); c.width = c.height = 96; const s = Math.min(im.width, im.height); c.getContext('2d').drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); res(c.toDataURL('image/jpeg', .72)); }; im.onerror = () => res(null); im.src = src; });
+const THQ = []; let thBusy = 0;
+function thRun() { while (thBusy < 3 && THQ.length) { const j = THQ.shift(); thBusy++; j().finally(() => { thBusy--; thRun(); }); } }
+const thJob = (f) => new Promise((res) => { THQ.push(() => f().then(res, () => res(null))); thRun(); });
+const THC = new Map();
+async function thumbOf(k) {
+  if (THC.has(k)) return THC.get(k);
+  const c = await thGet(k); if (c !== undefined) { const u = c === '-' ? null : c; THC.set(k, u); return u; }
+  if (!files.has(k) || window.__scan) return null;
+  const u = await thJob(async () => { const tg = await readTags(k, true); if (!tg.cover) return null; const o = await shrink(tg.cover); if (tagCache.get(k) !== tg) URL.revokeObjectURL(tg.cover); return o; });
+  THC.set(k, u); thPut(k, u || '-'); return u;
+}
+async function fillCover(el) {
+  let u = null;
+  if (el.dataset.cvk) u = await thumbOf(el.dataset.cvk);
+  else if (el.dataset.cv) { const g = el.dataset.cv, ks = (g.startsWith('ar:') ? groups('artist') : groups('album')).get(g.slice(3)) || []; for (const k of ks.slice(0, 12)) { u = await thumbOf(k); if (u) break; } }
+  else if (el.dataset.k) u = await thumbOf(el.dataset.k);
+  if (u && el.isConnected) { el.style.backgroundImage = `url(${u})`; el.style.backgroundSize = 'cover'; el.textContent = ''; }
+}
+const IO = new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { IO.unobserve(en.target); fillCover(en.target); } }), { rootMargin: '200px' });
+function decorate() {
+  document.querySelectorAll('#list .row[data-k]').forEach((r) => { if (r.querySelector('.th')) return; r.insertAdjacentHTML('afterbegin', `<div class="th" data-k="${esc(r.dataset.k)}">♪</div>`); IO.observe(r.firstChild); });
+  document.querySelectorAll('#list .av[data-cv],#list .av[data-cvk]').forEach((el) => IO.observe(el));
+}
+
+const gKeys = (g) => (g.startsWith('ar:') ? groups('artist') : groups('album')).get(g.slice(3)) || [];
+const shuf = (ks) => [...ks].sort(() => Math.random() - .5);
+function groupMenu(g, x, y) {
+  const ks = gKeys(g), it = [['▶ تشغيل الكل', () => startQueue(ks, ks[0])], ['🔀 عشوائي', () => startQueue(shuf(ks), null)], ['⏭ تشغيل بعد دي', async () => { for (const k of [...ks].reverse()) await enqueue(k, true); }], ['＋ إضافة للقايمة الجاية', async () => { for (const k of ks) await enqueue(k, false); }], ['➕ إضافة لقايمة…', (x2, y2) => addMenuMulti(ks, x2, y2)], ['↗ فتح', () => { view = g; render(); }]];
+  if (g.startsWith('ar:')) it.push(['🚫 ما تفصلش الاسم ده', () => { view = g; noSplit(); }]);
+  showMenu(x, y, it);
+}
+function navMenu(v, x, y) {
+  const lst = v.startsWith('pl:') ? DB.lists[v.slice(3)] || [] : v === 'fav' ? DB.favs : v === 'lib' ? Object.keys(DB.lib) : v === 'queue' ? tracks.map((t) => t.path) : null;
+  const it = [['↗ فتح', () => { view = v; render(); }]];
+  if (lst) it.unshift(['▶ تشغيل الكل', () => startQueue(lst, lst[0])], ['🔀 عشوائي', () => startQueue(shuf(lst), null)]);
+  if (v === 'fav' || v.startsWith('pl:')) it.push(['↗ مشاركة القايمة (نص)', () => { view = v; shareList(); }], ['⇩ تصدير M3U', () => { view = v; exportM3U(); }]);
+  if (v.startsWith('pl:')) it.push(['✎ إعادة تسمية', () => { view = v; renameList(); }], ['🗑 حذف القايمة', () => { view = v; deleteList(); }]);
+  showMenu(x, y, it);
+}
+function curMenu(x, y) { const k = curKey(); if (!k) return; SEL.clear(); SEL.add(k); selMenu(x, y); SEL.clear(); }
+function qMenu(i, x, y) {
+  const k = (tracks[i] || {}).path, m = DB.lib[k] || {}; if (!k) return;
+  const it = [['▶ تشغيل', () => setTrack(i, true)], [isFav(k) ? '♡ شيل من المفضلة' : '♥ أضف للمفضلة', () => toggleFav(k)], ['➕ إضافة لقايمة…', (x2, y2) => addMenuMulti([k], x2, y2)], ['↗ مشاركة الأغنية', () => shareTrack(k)]];
+  artistsOf(m).forEach((a) => it.push(['👤 ' + a, () => { view = 'ar:' + a; render(); }])); if (m.album) it.push(['💿 ' + m.album, () => { view = 'al:' + m.album; render(); }]);
+  it.push(['✕ إزالة من هنا', () => { if (i === cur) return toast('مينفعش تشيل الأغنية الشغالة'); tracks.splice(i, 1); if (i < cur) cur--; save(); render(); renderQ(); }]);
+  showMenu(x, y, it);
+}
+document.addEventListener('contextmenu', (e) => {
+  if (e.defaultPrevented) return;
+  const t = e.target; if (t.closest('input:not([type=range]),textarea,select')) return;
+  e.preventDefault(); const x = e.clientX, y = e.clientY, c = (s) => t.closest(s); let el;
+  if (c('#menu')) return;
+  if ((el = c('[data-g]'))) return groupMenu(el.dataset.g, x, y);
+  if ((el = c('[data-play]'))) { SEL.clear(); SEL.add(el.dataset.play); selMenu(x, y); return SEL.clear(); }
+  if ((el = c('.nv[data-v]'))) return navMenu(el.dataset.v, x, y);
+  if ((el = c('.qr[data-i]'))) return qMenu(+el.dataset.i, x, y);
+  if (c('#thumb,.info,#fv,#npv')) return curMenu(x, y);
+  if (c('.seekrow')) return showMenu(x, y, [['⏮ من الأول', () => { audio.currentTime = 0; }], ['⏪ رجوع 15 ث', () => { audio.currentTime -= 15; }], ['⏩ تقدم 15 ث', () => { audio.currentTime += 15; }]]);
+  if (c('.vol')) return showMenu(x, y, [['🔇 كتم / إلغاء الكتم', () => { audio.muted = !audio.muted; }], ...[100, 75, 50, 25].map((v) => [v + '%', () => { audio.muted = false; $('#vol').value = v; $('#vol').dispatchEvent(new Event('input')); }])]);
+  if (c('#play')) return showMenu(x, y, [[audio.paused ? '▶ تشغيل' : '⏸ إيقاف مؤقت', () => $('#play').click()], ['⏹ إيقاف تام', () => { audio.pause(); audio.currentTime = 0; }]]);
+  if (c('#next,#prev')) return showMenu(x, y, [['⏭ التالي', () => $('#next').click()], ['⏮ السابق', () => $('#prev').click()], ['⏮ من الأول', () => { audio.currentTime = 0; }]]);
+  if (c('#shuffle')) return showMenu(x, y, [['🔀 عشوائي (تشغيل/إيقاف)', () => $('#shuffle').click()]]);
+  if ((el = c('button[id]')) && ['repeat', 'spd', 'slp', 'eqb', 'skn', 'lang', 'vm', 'qb', 'np', 'addf', 'addd'].includes(el.id)) return el.click();
+  if (c('.hero,#vt,.top,#list,main,.sub')) return showMenu(x, y, [['＋ إضافة ملفات', () => $('#addf').click()], ['＋ إضافة مجلد', () => $('#addd').click()], ['☑ تحديد الكل', () => { visKeys().forEach((k) => SEL.add(k)); paintSel(); }], ['⋯ المزيد…', () => $('#vm').click()]]);
+  showMenu(x, y, [['🎨 الشكل', () => $('#skn').click()], ['🌐 اللغة', () => $('#lang').click()], ['🎚 المعادل', () => $('#eqb').click()], ['⏱ مؤقت النوم', () => $('#slp').click()], ['⚡ السرعة', () => $('#spd').click()]]);
+});
+
 window.__v8 = true; render();
 setLang(LG);
 </script>
